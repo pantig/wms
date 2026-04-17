@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Symulacja magazynu palet</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">Symulacja WMS .NET 10</p>
+            <h1>Magazyn palet 9 x 3</h1>
+        </div>
+        <div class="status-strip" aria-live="polite">
+            <span id="modeBadge" class="mode-badge">Ładowanie</span>
+            <span>Czas: <strong id="currentTime">00:00</strong></span>
+            <span>Krok: <strong id="historyPosition">1/1</strong></span>
+        </div>
+    </header>
+
+    <main class="app-shell">
+        <section class="warehouse-section" aria-labelledby="warehouseTitle">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Rzut kartezjański</p>
+                    <h2 id="warehouseTitle">Dostęp od strony N</h2>
+                </div>
+                <div class="legend" aria-label="Legenda palet">
+                    <span><i class="legend-swatch type-a"></i>A: 1</span>
+                    <span><i class="legend-swatch type-b"></i>B: 2</span>
+                    <span><i class="legend-swatch type-c"></i>C: 3</span>
+                </div>
+            </div>
+
+            <div class="axis north">N</div>
+            <div class="board-scroll">
+                <div class="board">
+                    <div class="corner-label"></div>
+                    <div id="xAxis" class="x-axis"></div>
+                    <div id="yAxis" class="y-axis"></div>
+                    <div id="warehouseGrid" class="warehouse-grid" aria-label="Siatka pozycji magazynu"></div>
+                </div>
+            </div>
+            <div class="axis south">S</div>
+        </section>
+
+        <aside class="side-panel" aria-label="Sterowanie symulacją">
+            <section class="metrics">
+                <h2>Stan</h2>
+                <div class="metric-grid">
+                    <div><span>Załadowane palety</span><strong id="loadedPallets">0</strong></div>
+                    <div><span>Status</span><strong id="statusMessage">OK</strong></div>
+                    <div><span>Rozładowane stacki</span><strong id="unloadedStacks">0</strong></div>
+                    <div><span>Serie po 9</span><strong id="unloadBatches">0</strong></div>
+                    <div><span>Pełne stacki</span><strong id="fullStacks">0</strong></div>
+                    <div><span>Dostępne pełne</span><strong id="accessibleFullStacks">0</strong></div>
+                    <div><span>Plan serii</span><strong id="readyStacks">0/9</strong></div>
+                    <div><span>Aktywny cykl</span><strong id="activeCycle">0/9</strong></div>
+                </div>
+            </section>
+
+            <section class="controls">
+                <h2>Sterowanie czasem</h2>
+                <div class="button-row">
+                    <button id="playPauseButton" type="button">Pauza</button>
+                    <button id="previousButton" type="button">Poprzedni krok</button>
+                    <button id="nextButton" type="button">Następny krok</button>
+                </div>
+                <button id="resetButton" class="secondary wide" type="button">Reset symulacji</button>
+                <div class="countdowns">
+                    <span>Następny załadunek: <strong id="nextLoadIn">00:00</strong></span>
+                    <span>Następny cykl: <strong id="nextUnloadCycleIn">00:00</strong></span>
+                    <span>Następny stack w cyklu: <strong id="nextUnloadStackIn">-</strong></span>
+                </div>
+            </section>
+
+            <section class="settings">
+                <h2>Czasy operacji</h2>
+                <form id="settingsForm">
+                    <label>
+                        Załadunek co
+                        <input id="loadSeconds" name="loadSeconds" type="number" min="0.05" step="0.01" inputmode="decimal" value="5">
+                        <span>s</span>
+                    </label>
+                    <label>
+                        Cykl rozładunku co
+                        <input id="unloadCycleSeconds" name="unloadCycleSeconds" type="number" min="0.05" step="0.01" inputmode="decimal" value="300">
+                        <span>s</span>
+                    </label>
+                    <label>
+                        Stack w cyklu co
+                        <input id="unloadStackSeconds" name="unloadStackSeconds" type="number" min="0.05" step="0.01" inputmode="decimal" value="5">
+                        <span>s</span>
+                    </label>
+                    <button type="submit" class="wide">Zastosuj</button>
+                </form>
+            </section>
+
+            <section class="selected">
+                <h2>Wybrana pozycja</h2>
+                <div id="selectedStack" class="selected-stack">Kliknij pozycję w magazynie.</div>
+            </section>
+
+            <section class="events">
+                <h2>Zdarzenia</h2>
+                <ol id="eventList" class="event-list"></ol>
+            </section>
+        </aside>
+    </main>
+
+    <script src="app.js?v=20260417-2" type="module"></script>
+</body>
+</html>
