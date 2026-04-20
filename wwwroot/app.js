@@ -7,6 +7,8 @@ const elements = {
     grid: document.querySelector("#warehouseGrid"),
     loadedPallets: document.querySelector("#loadedPallets"),
     statusMessage: document.querySelector("#statusMessage"),
+    loadBlockTime: document.querySelector("#loadBlockTime"),
+    pendingLoadPallet: document.querySelector("#pendingLoadPallet"),
     unloadedStacks: document.querySelector("#unloadedStacks"),
     unloadBatches: document.querySelector("#unloadBatches"),
     fullStacks: document.querySelector("#fullStacks"),
@@ -116,16 +118,26 @@ function render(snapshot) {
 }
 
 function renderStatus(snapshot) {
-    elements.modeBadge.textContent = snapshot.isBlocked
+    elements.modeBadge.textContent = snapshot.isFinalBlocked
         ? "Blokada"
         : snapshot.isRunning
             ? "Czas działa"
             : "Pauza";
+    if (snapshot.isFinalBlocked) {
+        elements.modeBadge.textContent = "Blokada ostateczna";
+    } else if (snapshot.isLoadWaitingForUnload) {
+        elements.modeBadge.textContent = "Blokada - czeka";
+    }
+
     elements.modeBadge.className = `mode-badge ${snapshot.mode}`;
     elements.currentTime.textContent = snapshot.currentTime;
     elements.historyPosition.textContent = `${snapshot.historyIndex}/${snapshot.historyCount}`;
     elements.loadedPallets.textContent = snapshot.loadedPallets;
     elements.statusMessage.textContent = snapshot.blockMessage ?? "OK";
+    elements.loadBlockTime.textContent = snapshot.isLoadWaitingForUnload
+        ? `${snapshot.totalLoadBlockTime} (+${snapshot.currentLoadBlockTime})`
+        : snapshot.totalLoadBlockTime;
+    elements.pendingLoadPallet.textContent = snapshot.pendingLoadPallet ?? "-";
     elements.unloadedStacks.textContent = snapshot.unloadedStacks;
     elements.unloadBatches.textContent = snapshot.unloadBatches;
     elements.fullStacks.textContent = snapshot.fullStacks;
@@ -138,7 +150,7 @@ function renderStatus(snapshot) {
     elements.nextUnloadCycleIn.textContent = snapshot.nextUnloadCycleIn;
     elements.nextUnloadStackIn.textContent = snapshot.nextUnloadStackIn;
     elements.playPauseButton.textContent = snapshot.isRunning ? "Pauza" : "Start";
-    elements.playPauseButton.disabled = snapshot.isBlocked;
+    elements.playPauseButton.disabled = snapshot.isFinalBlocked ?? snapshot.isBlocked;
     elements.previousButton.disabled = !snapshot.canStepBackward;
 
     if (shouldSyncSettingsInputs()) {

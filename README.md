@@ -39,11 +39,10 @@ Dla istniejacych stackow dziala dodatkowy priorytet operacyjny:
 - potem uzupelniane sa dostepne niepelne stacki wedlug aging FIFO: im dluzej najstarsza paleta lezy w stacku i im wieksza jest suma wieku palet, tym wyzszy priorytet,
 - dopiero na koncu otwierana jest nowa pozycja w kolejnosci kolumnowej.
 
-Palety nie sa odrzucane. Jezeli dla nowej palety nie da sie znalezc zadnej legalnej pozycji, symulacja zatrzymuje sie w stanie blokady i zapisuje komunikat:
+Palety nie sa odrzucane. Jezeli dla nowej palety nie da sie znalezc zadnej legalnej pozycji, paleta zostaje zapamietana jako oczekujaca. Symulator rozroznia dwa rodzaje blokady:
 
-```text
-blokada - brak miejsca na magazynie
-```
+- `blokada - oczekiwanie na cykl rozladunku` - jezeli mozna juz zaplanowac serie 9 stackow, symulacja nie zatrzymuje sie; liczy laczny czas oczekiwania, a paleta zostaje zaladowana po odblokowaniu miejsca,
+- `blokada ostateczna` - jezeli nie ma miejsca na palete i nie da sie zaplanowac cyklu rozladunku, dalsze czekanie nic nie zmieni; symulacja zatrzymuje sie.
 
 W ramach tej kolejnosci nadal obowiazuja reguly dostepu od N, maksymalnej wysokosci 7 i zakazu stawiania wiekszej palety na mniejszej. Jezeli w kolumnie `X1` zajete jest `X1Y3`, to `X1Y2` i `X1Y1` sa zablokowane, nawet jesli sasiednia kolumna jest pusta.
 

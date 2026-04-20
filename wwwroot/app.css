@@ -125,6 +125,12 @@ h2 {
     background: var(--amber-soft);
 }
 
+.mode-badge.waiting {
+    color: #241a03;
+    border-color: var(--amber);
+    background: var(--amber-soft);
+}
+
 .mode-badge.blocked {
     color: #ffffff;
     border-color: var(--red);
@@ -556,9 +562,12 @@ h2 {
     border-left-color: var(--blue);
 }
 
-.event-list li.reject,
-.event-list li.block,
 .event-list li.wait {
+    border-left-color: var(--amber);
+}
+
+.event-list li.reject,
+.event-list li.block {
     border-left-color: var(--red);
 }
 

@@ -148,15 +148,17 @@ internal sealed class SimulationEngine
             AdvanceAutoClock();
 
             _settings = new SimulationSettings(loadInterval, unloadCycleInterval, unloadStackInterval);
-            _state.NextLoadAt = _state.CurrentTime + _settings.LoadInterval;
-
             if (_state.IsUnloadCycleActive)
             {
+                _state.NextLoadAt = _state.CurrentTime + _settings.LoadInterval;
                 _state.NextUnloadStackAt = _state.CurrentTime + _settings.UnloadStackInterval;
             }
             else
             {
                 _state.NextUnloadCycleAt = _state.CurrentTime + _settings.UnloadCycleInterval;
+                _state.NextLoadAt = _state.IsLoadWaitingForUnload
+                    ? _state.NextUnloadCycleAt
+                    : _state.CurrentTime + _settings.LoadInterval;
             }
 
             _state.LastWaitingReadyCount = null;
@@ -354,7 +356,7 @@ internal sealed class SimulationEngine
 
     private bool LoadOnePallet(TimeSpan eventTime)
     {
-        var pallet = RandomPallet();
+        var pallet = _state.PendingLoadPallet ?? RandomPallet();
         var decision = LoadingOptimizer.ChoosePosition(
             _state.Warehouse,
             pallet,
@@ -363,12 +365,17 @@ internal sealed class SimulationEngine
 
         if (decision is null)
         {
-            _state.IsBlocked = true;
-            _state.BlockMessage = "blokada - brak miejsca na magazynie";
-            _isRunning = false;
-            Log("block", _state.BlockMessage, eventTime);
+            if (CanWaitForUnloadCycle())
+            {
+                EnterLoadWaitBlock(pallet, eventTime);
+                return false;
+            }
+
+            EnterFinalBlock(pallet, eventTime);
             return false;
         }
+
+        CompleteLoadWaitBlock(eventTime);
 
         var selected = decision.Position;
         var storedPallet = new StoredPallet(++_state.NextPalletId, pallet, eventTime);
@@ -380,6 +387,90 @@ internal sealed class SimulationEngine
             $"Zaladunek {pallet.Code()} #{storedPallet.Id} -> X={selected.DisplayX}, Y={selected.DisplayY}. Regula: {decision.Reason}.",
             eventTime);
         return true;
+    }
+
+    private bool CanWaitForUnloadCycle()
+    {
+        if (_state.IsUnloadCycleActive)
+        {
+            return _state.ActiveUnloadRemaining > 0;
+        }
+
+        var plan = _state.Warehouse.PlanUnloadSeries(UnloadSeriesSize);
+        if (plan.Count == UnloadSeriesSize)
+        {
+            return true;
+        }
+
+        return _state.Warehouse.PlanUnloadSeries(UnloadSeriesSize, allowRelief: true).Count == UnloadSeriesSize;
+    }
+
+    private void EnterLoadWaitBlock(PalletType pallet, TimeSpan eventTime)
+    {
+        _state.PendingLoadPallet = pallet;
+        _state.BlockMessage = $"blokada - oczekiwanie na cykl rozladunku dla palety {pallet.Code()}";
+
+        if (!_state.IsLoadWaitingForUnload)
+        {
+            _state.IsLoadWaitingForUnload = true;
+            _state.LoadWaitBlockStartedAt = eventTime;
+            Log(
+                "wait",
+                $"{_state.BlockMessage}. Symulacja pracuje dalej i zlicza czas blokady.",
+                eventTime);
+        }
+
+        if (_state.IsUnloadCycleActive)
+        {
+            _state.NextLoadAt = eventTime + _settings.LoadInterval;
+            return;
+        }
+
+        _state.NextLoadAt = _state.NextUnloadCycleAt > eventTime
+            ? _state.NextUnloadCycleAt
+            : eventTime + _settings.LoadInterval;
+    }
+
+    private void CompleteLoadWaitBlock(TimeSpan eventTime)
+    {
+        if (!_state.IsLoadWaitingForUnload)
+        {
+            _state.PendingLoadPallet = null;
+            return;
+        }
+
+        var startedAt = _state.LoadWaitBlockStartedAt ?? eventTime;
+        var duration = eventTime > startedAt ? eventTime - startedAt : TimeSpan.Zero;
+        _state.TotalLoadWaitBlockTime += duration;
+        _state.IsLoadWaitingForUnload = false;
+        _state.LoadWaitBlockStartedAt = null;
+        _state.PendingLoadPallet = null;
+        _state.BlockMessage = null;
+
+        Log(
+            "wait",
+            $"Koniec blokady oczekiwania: trwala {FormatTime(duration)}, lacznie {FormatTime(_state.TotalLoadWaitBlockTime)}.",
+            eventTime);
+    }
+
+    private void EnterFinalBlock(PalletType pallet, TimeSpan eventTime)
+    {
+        if (_state.IsLoadWaitingForUnload)
+        {
+            var startedAt = _state.LoadWaitBlockStartedAt ?? eventTime;
+            if (eventTime > startedAt)
+            {
+                _state.TotalLoadWaitBlockTime += eventTime - startedAt;
+            }
+        }
+
+        _state.IsLoadWaitingForUnload = false;
+        _state.LoadWaitBlockStartedAt = null;
+        _state.PendingLoadPallet = pallet;
+        _state.IsBlocked = true;
+        _state.BlockMessage = $"blokada ostateczna - brak miejsca na magazynie dla palety {pallet.Code()} i brak cyklu rozladunku, ktory moze odblokowac magazyn";
+        _isRunning = false;
+        Log("block", _state.BlockMessage, eventTime);
     }
 
     private CycleStartAttempt TryStartUnloadCycle(TimeSpan eventTime)
@@ -566,26 +657,45 @@ internal sealed class SimulationEngine
         var waitingForUnload = !_state.IsUnloadCycleActive
             && _state.CurrentTime >= _state.NextUnloadCycleAt
             && unloadPlan.Count < UnloadSeriesSize;
+        var currentLoadBlockDuration = CurrentLoadWaitBlockDuration();
+        var totalLoadBlockDuration = _state.TotalLoadWaitBlockTime + currentLoadBlockDuration;
         var nextUnloadIn = _state.IsUnloadCycleActive
             ? FormatCountdown(_state.NextUnloadStackAt - _state.CurrentTime)
             : waitingForUnload
                 ? "czeka"
                 : FormatCountdown(_state.NextUnloadCycleAt - _state.CurrentTime);
+        var nextLoadIn = _state.IsLoadWaitingForUnload
+            ? "czeka"
+            : FormatCountdown(_state.NextLoadAt - _state.CurrentTime);
+        var mode = _state.IsBlocked
+            ? "blocked"
+            : _state.IsLoadWaitingForUnload
+                ? "waiting"
+                : _isRunning
+                    ? "running"
+                    : "paused";
 
         return new SimulationSnapshotDto(
             _state.Warehouse.Width,
             _state.Warehouse.Depth,
-            _state.IsBlocked ? "blocked" : _isRunning ? "running" : "paused",
+            mode,
             _isRunning && !_state.IsBlocked,
             _state.IsBlocked,
             _state.BlockMessage,
+            _state.IsLoadWaitingForUnload,
+            _state.IsBlocked,
+            FormatTime(totalLoadBlockDuration),
+            totalLoadBlockDuration.TotalSeconds,
+            FormatTime(currentLoadBlockDuration),
+            currentLoadBlockDuration.TotalSeconds,
+            _state.PendingLoadPallet?.Code().ToString(),
             FormatTime(_state.CurrentTime),
             _state.CurrentTime.TotalSeconds,
             _settings.LoadInterval.TotalSeconds,
             _settings.UnloadCycleInterval.TotalSeconds,
             _settings.UnloadCycleInterval.TotalSeconds,
             _settings.UnloadStackInterval.TotalSeconds,
-            FormatCountdown(_state.NextLoadAt - _state.CurrentTime),
+            nextLoadIn,
             nextUnloadIn,
             waitingForUnload ? "czeka" : FormatCountdown(_state.NextUnloadCycleAt - _state.CurrentTime),
             _state.IsUnloadCycleActive
@@ -612,6 +722,18 @@ internal sealed class SimulationEngine
                 .Take(30)
                 .Select(item => new SimulationEventDto(item.Number, FormatTime(item.Time), item.Kind, item.Text))
                 .ToList());
+    }
+
+    private TimeSpan CurrentLoadWaitBlockDuration()
+    {
+        if (!_state.IsLoadWaitingForUnload || _state.LoadWaitBlockStartedAt is null)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return _state.CurrentTime > _state.LoadWaitBlockStartedAt.Value
+            ? _state.CurrentTime - _state.LoadWaitBlockStartedAt.Value
+            : TimeSpan.Zero;
     }
 
     private void SaveHistory()
@@ -786,6 +908,14 @@ internal sealed class SimulationState
 
     public string? BlockMessage { get; set; }
 
+    public bool IsLoadWaitingForUnload { get; set; }
+
+    public TimeSpan? LoadWaitBlockStartedAt { get; set; }
+
+    public TimeSpan TotalLoadWaitBlockTime { get; set; }
+
+    public PalletType? PendingLoadPallet { get; set; }
+
     public int LoadedPallets { get; set; }
 
     public int UnloadedStacks { get; set; }
@@ -817,6 +947,10 @@ internal sealed class SimulationState
             ActiveUnloadRemaining = ActiveUnloadRemaining,
             IsBlocked = IsBlocked,
             BlockMessage = BlockMessage,
+            IsLoadWaitingForUnload = IsLoadWaitingForUnload,
+            LoadWaitBlockStartedAt = LoadWaitBlockStartedAt,
+            TotalLoadWaitBlockTime = TotalLoadWaitBlockTime,
+            PendingLoadPallet = PendingLoadPallet,
             LoadedPallets = LoadedPallets,
             UnloadedStacks = UnloadedStacks,
             UnloadBatches = UnloadBatches,
